@@ -13,5 +13,11 @@ def hello_world():
 def hello_mark():
     return "Hello Mark!"
 
+@app.route('/goodbye')
+def goodbye():
+    hostname = socket.gethostname()
+    ip_address = socket.gethostbyname(hostname)
+    return f"Goodbye (IP: {ip_address})"
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
