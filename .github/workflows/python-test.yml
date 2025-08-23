@@ -38,21 +38,21 @@ jobs:
       run: |
         pytest -v
 
-    - name: Auto-merge if tests pass
+    - name: Check PR mergeability
       if: github.event_name == 'pull_request' && success()
       run: |
         # Configure Git
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         git config --global user.name "GitHub Actions"
         
-        # Enable auto-merge using GitHub CLI
-        gh pr merge ${{ github.event.pull_request.number }} --merge --auto || {
-          echo "Unable to enable auto-merge. Checking if manual merge is possible..."
-          # Attempt manual merge
-          git fetch origin main:main
-          git checkout main
-          git merge --no-ff "origin/feature/mark-hello" -m "Merge feature/mark-hello into main"
-          git push origin main
-        }
+        # Check if PR is mergeable
+        if [[ $(gh pr view ${{ github.event.pull_request.number }} --json mergeable -q .mergeable) == "true" ]]; then
+          echo "PR is mergeable. Proceeding with auto-merge..."
+          gh pr merge ${{ github.event.pull_request.number }} --merge --auto
+        else
+          echo "PR has merge conflicts. Manual intervention required."
+          echo "Please resolve conflicts locally and push changes."
+          # Don't exit with error - this allows the workflow to pass while indicating merge status
+        fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
