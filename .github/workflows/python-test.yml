@@ -8,6 +8,10 @@ on:
     branches:
       - main   # This will trigger on PRs targeting main
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -33,3 +37,17 @@ jobs:
     - name: Run tests
       run: |
         pytest -v
+
+    - name: Auto-merge if tests pass
+      if: github.event_name == 'pull_request' && success()
+      run: |
+        # Check if there are merge conflicts
+        if [[ $(gh pr view ${{ github.event.pull_request.number }} --json mergeable -q .mergeable) == "true" ]]; then
+          # Enable auto-merge
+          gh pr merge ${{ github.event.pull_request.number }} --merge --auto
+        else
+          echo "PR has merge conflicts. Manual intervention required."
+          exit 1
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
