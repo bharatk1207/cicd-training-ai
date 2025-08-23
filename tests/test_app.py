@@ -27,6 +27,20 @@ def test_hello_mark_route(client):
     assert response.status_code == 200
     assert response.data.decode('utf-8') == "Hello Mark!"
 
+def test_greet_route(client):
+    """Test the /greet/<name> route"""
+    test_name = "Larry"
+    response = client.get(f'/greet/{test_name}')
+    assert response.status_code == 200
+    
+    # Get the expected hostname and IP
+    hostname = socket.gethostname()
+    ip_address = socket.gethostbyname(hostname)
+    expected_response = f"Hello, {test_name} (IP: {ip_address})"
+    
+    # Convert bytes to string and compare
+    assert response.data.decode('utf-8') == expected_response
+
 def test_non_existing_route(client):
     """Test a non-existing route returns 404"""
     response = client.get('/nonexistent')
