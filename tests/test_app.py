@@ -21,6 +21,12 @@ def test_hello_world_route(client):
     # Convert bytes to string and compare
     assert response.data.decode('utf-8') == expected_response
 
+def test_hello_mark_route(client):
+    """Test the /hello route"""
+    response = client.get('/hello')
+    assert response.status_code == 200
+    assert response.data.decode('utf-8') == "Hello Mark!"
+
 def test_non_existing_route(client):
     """Test a non-existing route returns 404"""
     response = client.get('/nonexistent')

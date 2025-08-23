@@ -9,5 +9,9 @@ def hello_world():
     ip_address = socket.gethostbyname(hostname)
     return f"Hello World from {hostname} (IP: {ip_address})"
 
+@app.route('/hello')
+def hello_mark():
+    return "Hello Mark!"
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
