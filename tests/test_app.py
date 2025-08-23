@@ -1,0 +1,27 @@
+import pytest
+from app import app
+import socket
+
+@pytest.fixture
+def client():
+    app.config['TESTING'] = True
+    with app.test_client() as client:
+        yield client
+
+def test_hello_world_route(client):
+    """Test the / route"""
+    response = client.get('/')
+    assert response.status_code == 200
+    
+    # Get the expected hostname and IP
+    hostname = socket.gethostname()
+    ip_address = socket.gethostbyname(hostname)
+    expected_response = f"Hello World from {hostname} (IP: {ip_address})"
+    
+    # Convert bytes to string and compare
+    assert response.data.decode('utf-8') == expected_response
+
+def test_non_existing_route(client):
+    """Test a non-existing route returns 404"""
+    response = client.get('/nonexistent')
+    assert response.status_code == 404
