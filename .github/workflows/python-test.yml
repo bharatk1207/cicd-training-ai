@@ -115,7 +115,6 @@ jobs:
           title: 'Automated PR from ${{ github.ref_name }}'
           body: |
             Automated PR created from branch ${{ github.ref_name }}
-            
             Changes included in this PR:
             - Docker improvements
             - GitHub Actions workflow updates
