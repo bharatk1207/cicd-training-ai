@@ -11,23 +11,42 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  checks: write  # Required for posting status checks
 
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.11']  # Using the same Python version as your local environment
+        python-version: ['3.11']
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4  # Latest checkout action
+        uses: actions/checkout@v4
+
+      - name: YAML Lint
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          file_or_dir: .github/workflows/python-test.yml
+          config_file: .yamllint.yml
+          strict: false
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5  # Latest Python setup action
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip'  # Caching pip dependencies
+          cache: 'pip'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
 
       - name: Install dependencies
         run: |
@@ -38,54 +57,78 @@ jobs:
         run: |
           pytest -v
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           load: true
           tags: flask-app:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
       - name: Run Docker container
         run: |
           docker run -d -p 5000:5000 flask-app:latest
           sleep 5  # Wait for container to start
 
-      - name: Test Docker container
+      - name: Test Docker container endpoints
         run: |
-          # Test root endpoint
-          response_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/)
-          if [ $response_code -ne 200 ]; then
-            echo "Error: Root endpoint returned $response_code"
+          # Function to test endpoint
+          test_endpoint() {
+            local url=$1
+            local expected_code=$2
+            local response_code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
+            if [ "$response_code" -ne "$expected_code" ]; then
+              echo "Error: Endpoint $url returned $response_code (expected $expected_code)"
+              return 1
+            fi
+            echo "✓ Endpoint $url test passed"
+            return 0
+          }
+
+          # Test all endpoints
+          test_endpoint "http://localhost:5000/" 200
+          test_endpoint "http://localhost:5000/hello" 200
+          test_endpoint "http://localhost:5000/goodbye" 200
+          test_endpoint "http://localhost:5000/greet/John" 200
+          test_endpoint "http://localhost:5000/nonexistent" 404
+
+          # Additional validation for response content
+          response=$(curl -s "http://localhost:5000/greet/TestUser")
+          if [[ "$response" != *"Hello, TestUser"* ]]; then
+            echo "Error: Incorrect response from /greet endpoint"
             exit 1
           fi
-          echo "Docker container test passed successfully"
+
+          echo "All Docker container tests passed successfully"
+
+      - name: Create PR
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          title: 'Automated PR from ${{ github.ref_name }}'
+          body: |
+            Automated PR created from branch ${{ github.ref_name }}
+            Changes included in this PR:
+            - Docker improvements
+            - GitHub Actions workflow updates
+          base: main
+          branch: ${{ github.ref }}
+          delete-branch: true
 
       - name: Auto-merge if tests pass
         if: github.event_name == 'pull_request' && success()
+        uses: pascalgn/automerge-action@v0.15.6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Configure Git
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "GitHub Actions"
-          
-          # Check if PR is mergeable
-          if [[ $(gh pr view ${{ github.event.pull_request.number }} --json mergeable -q .mergeable) == "true" ]]; then
-            echo "PR is mergeable. Proceeding with auto-merge..."
-            gh pr merge ${{ github.event.pull_request.number }} --merge --auto
-          else
-            echo "PR has merge conflicts. Manual intervention required."
-          fi
-          # Attempt manual merge
-          git fetch origin main:main
-          git checkout main
-          git merge --no-ff "origin/feature/mark-hello" -m "Merge feature/mark-hello into main"
-          git push origin main
-        }
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MERGE_LABELS: ""
+          MERGE_METHOD: "merge"
+          MERGE_COMMIT_MESSAGE: "Automated merge of PR #${pullRequest.number}"
+          MERGE_DELETE_BRANCH: true
+          MERGE_ERROR_FAIL: true
